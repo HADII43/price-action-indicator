@@ -1,5 +1,5 @@
 //@version=5
-indicator("Perfect Price Action Engine", overlay=true, max_labels_count=200, max_boxes_count=100, max_lines_count=100)
+indicator("Perfect Price Action Engine", overlay=true, max_labels_count=200, max_boxes_count=50)
 
 // ============================
 // Inputs
@@ -9,19 +9,13 @@ pivotRight = input.int(5, "Pivot Right", minval=1, maxval=50)
 bosLookback = input.int(20, "BOS Lookback", minval=5, maxval=200)
 volLookback = input.int(20, "Volume SMA Length", minval=5, maxval=200)
 volMultiplier = input.float(1.5, "Volume Bubble Threshold", minval=0.1, step=0.1)
-fvgMinGap = input.float(0.0, "Min FVG Gap Filter", minval=0.0, step=0.1)
+minFvgGap = input.float(0.0, "Min FVG Gap", minval=0.0, step=0.1)
 
 showFVG = input.bool(true, "Show FVG")
 showBOS = input.bool(true, "Show BOS")
 showCHoCH = input.bool(true, "Show CHoCH")
 showHHLL = input.bool(true, "Show HH / LL")
-showVol = input.bool(true, "Show Volume Bubbles")
-
-// ============================
-// Arrays for FVG boxes
-// ============================
-var box[] bullFvgBoxes = array.new_box()
-var box[] bearFvgBoxes = array.new_box()
+showVol = input.bool(true, "Show Volume")
 
 // ============================
 // FVG detection
@@ -32,72 +26,31 @@ bearFVG = high < math.min(low[1], low[2]) and close < open
 bullFvgGap = low - math.max(high[1], high[2])
 bearFvgGap = math.min(low[1], low[2]) - high
 
-if showFVG and bullFVG and bullFvgGap >= fvgMinGap
-    newBullBox = box.new(left=bar_index - 1, top=math.max(high[1], high[2]), right=bar_index, bottom=low, border_color=color.new(color.lime, 0), bgcolor=color.new(color.lime, 20), extend=extend.right)
-    array.push(bullFvgBoxes, newBullBox)
-    if array.size(bullFvgBoxes) > 20
-        oldBullBox = array.shift(bullFvgBoxes)
-        box.delete(oldBullBox)
+// ============================
+// BOS + CHoCH detection
+// ============================
+currentBullHigh = ta.highest(high, bosLookback)
+currentBearLow = ta.lowest(low, bosLookback)
+prevBullHigh = ta.highest(high[1], bosLookback)
+prevBearLow = ta.lowest(low[1], bosLookback)
 
-if showFVG and bearFVG and bearFvgGap >= fvgMinGap
-    newBearBox = box.new(left=bar_index - 1, top=high, right=bar_index, bottom=math.min(low[1], low[2]), border_color=color.new(color.red, 0), bgcolor=color.new(color.red, 20), extend=extend.right)
-    array.push(bearFvgBoxes, newBearBox)
-    if array.size(bearFvgBoxes) > 20
-        oldBearBox = array.shift(bearFvgBoxes)
-        box.delete(oldBearBox)
+bullBOS = close > currentBullHigh and close[1] <= prevBullHigh
+bearBOS = close < currentBearLow and close[1] >= prevBearLow
+
+bullChoCH = close > currentBullHigh and close[1] < prevBullHigh and close > open
+bearChoCH = close < currentBearLow and close[1] > prevBearLow and close < open
 
 // ============================
-// BOS and CHoCH detection
+// HH/LL detection
 // ============================
-recentBullHigh = ta.highest(high, bosLookback)
-recentBearLow = ta.lowest(low, bosLookback)
+lastPivotHigh = ta.pivothigh(high, pivotLeft, pivotRight)
+lastPivotLow = ta.pivotlow(low, pivotLeft, pivotRight)
 
-bullBOS = close > recentBullHigh and close[1] <= recentBullHigh[1]
-bearBOS = close < recentBearLow and close[1] >= recentBearLow[1]
+prevPivotHigh = ta.pivothigh(high[1], pivotLeft, pivotRight)
+prevPivotLow = ta.pivotlow(low[1], pivotLeft, pivotRight)
 
-bullChoCH = close > recentBullHigh and close[1] < recentBullHigh[1] and close > open
-bearChoCH = close < recentBearLow and close[1] > recentBearLow[1] and close < open
-
-// ============================
-// Higher High / Lower Low detection
-// ============================
-var float[] recentHighPivots = array.new_float()
-var float[] recentLowPivots = array.new_float()
-var int[] recentHighBars = array.new_int()
-var int[] recentLowBars = array.new_int()
-
-pivotHigh = ta.pivothigh(high, pivotLeft, pivotRight)
-pivotLow = ta.pivotlow(low, pivotLeft, pivotRight)
-
-if not na(pivotHigh)
-    array.push(recentHighPivots, pivotHigh)
-    array.push(recentHighBars, bar_index)
-    if array.size(recentHighPivots) > 20
-        array.shift(recentHighPivots)
-        array.shift(recentHighBars)
-    if array.size(recentHighPivots) >= 2 and showHHLL
-        prevHigh = array.get(recentHighPivots, array.size(recentHighPivots) - 2)
-        currHigh = array.get(recentHighPivots, array.size(recentHighPivots) - 1)
-        pivotBar = array.get(recentHighBars, array.size(recentHighBars) - 1)
-        if currHigh > prevHigh
-            label.new(x=pivotBar, y=currHigh, text="HH", color=color.new(color.aqua, 0), textcolor=color.new(color.black, 0), style=label.style_label_down, size=size.tiny)
-        else if currHigh < prevHigh
-            label.new(x=pivotBar, y=currHigh, text="LH", color=color.new(color.orange, 0), textcolor=color.new(color.white, 0), style=label.style_label_down, size=size.tiny)
-
-if not na(pivotLow)
-    array.push(recentLowPivots, pivotLow)
-    array.push(recentLowBars, bar_index)
-    if array.size(recentLowPivots) > 20
-        array.shift(recentLowPivots)
-        array.shift(recentLowBars)
-    if array.size(recentLowPivots) >= 2 and showHHLL
-        prevLow = array.get(recentLowPivots, array.size(recentLowPivots) - 2)
-        currLow = array.get(recentLowPivots, array.size(recentLowPivots) - 1)
-        pivotBar = array.get(recentLowBars, array.size(recentLowBars) - 1)
-        if currLow < prevLow
-            label.new(x=pivotBar, y=currLow, text="LL", color=color.new(color.fuchsia, 0), textcolor=color.new(color.white, 0), style=label.style_label_up, size=size.tiny)
-        else if currLow > prevLow
-            label.new(x=pivotBar, y=currLow, text="HL", color=color.new(color.yellow, 0), textcolor=color.new(color.black, 0), style=label.style_label_up, size=size.tiny)
+bullHH = not na(lastPivotHigh) and not na(prevPivotHigh) and lastPivotHigh > prevPivotHigh
+bearLL = not na(lastPivotLow) and not na(prevPivotLow) and lastPivotLow < prevPivotLow
 
 // ============================
 // Volume bubbles
@@ -106,10 +59,10 @@ volAvg = ta.sma(volume, volLookback)
 volBubble = volume > volAvg * volMultiplier
 
 // ============================
-// Plot shapes
+// Plot signals
 // ============================
-plotshape(showFVG and bullFVG, title="Bull FVG", text="Bull FVG", style=shape.triangleup, location=location.belowbar, color=color.new(color.lime, 0), textcolor=color.new(color.white, 0), size=size.tiny)
-plotshape(showFVG and bearFVG, title="Bear FVG", text="Bear FVG", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), textcolor=color.new(color.white, 0), size=size.tiny)
+plotshape(showFVG and bullFVG and bullFvgGap >= minFvgGap, title="Bull FVG", text="Bull FVG", style=shape.triangleup, location=location.belowbar, color=color.new(color.lime, 0), textcolor=color.new(color.white, 0), size=size.tiny)
+plotshape(showFVG and bearFVG and bearFvgGap >= minFvgGap, title="Bear FVG", text="Bear FVG", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), textcolor=color.new(color.white, 0), size=size.tiny)
 
 plotshape(showBOS and bullBOS, title="Bull BOS", text="BOS", style=shape.labelup, location=location.belowbar, color=color.new(color.green, 0), textcolor=color.new(color.white, 0), size=size.tiny)
 plotshape(showBOS and bearBOS, title="Bear BOS", text="BOS", style=shape.labeldown, location=location.abovebar, color=color.new(color.maroon, 0), textcolor=color.new(color.white, 0), size=size.tiny)
@@ -117,14 +70,13 @@ plotshape(showBOS and bearBOS, title="Bear BOS", text="BOS", style=shape.labeldo
 plotshape(showCHoCH and bullChoCH, title="Bull CHoCH", text="CHoCH", style=shape.labelup, location=location.belowbar, color=color.new(color.teal, 0), textcolor=color.new(color.white, 0), size=size.tiny)
 plotshape(showCHoCH and bearChoCH, title="Bear CHoCH", text="CHoCH", style=shape.labeldown, location=location.abovebar, color=color.new(color.orange, 0), textcolor=color.new(color.white, 0), size=size.tiny)
 
+plotshape(showHHLL and bullHH, title="HH", text="HH", style=shape.circle, location=location.belowbar, color=color.new(color.aqua, 0), textcolor=color.new(color.black, 0), size=size.tiny)
+plotshape(showHHLL and bearLL, title="LL", text="LL", style=shape.circle, location=location.abovebar, color=color.new(color.fuchsia, 0), textcolor=color.new(color.white, 0), size=size.tiny)
+
 plotshape(showVol and volBubble, title="Volume Bubble", style=shape.circle, location=location.absolute, color=color.new(color.yellow, 25), size=size.tiny)
 
-// Optional simple trend band
-trendColor = close >= ta.ema(close, 20) ? color.new(color.lime, 50) : color.new(color.red, 50)
-plot(ta.ema(close, 20), title="EMA 20", color=trendColor, linewidth=1, display=display.none)
-
-alertcondition(bullBOS, title="Bull BOS", message="Bullish BOS detected")
-alertcondition(bearBOS, title="Bear BOS", message="Bearish BOS detected")
-alertcondition(bullChoCH, title="Bull CHoCH", message="Bullish CHoCH detected")
-alertcondition(bearChoCH, title="Bear CHoCH", message="Bearish CHoCH detected")
-alertcondition(volBubble, title="Volume Spike", message="Volume spike detected")
+alertcondition(bullBOS, "Bull BOS", "Bullish BOS detected")
+alertcondition(bearBOS, "Bear BOS", "Bearish BOS detected")
+alertcondition(bullChoCH, "Bull CHoCH", "Bullish CHoCH detected")
+alertcondition(bearChoCH, "Bear CHoCH", "Bearish CHoCH detected")
+alertcondition(volBubble, "Volume Spike", "Volume spike detected")
